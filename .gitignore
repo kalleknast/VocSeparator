@@ -1,0 +1,12 @@
+# User specific ignores
+data/
+Vocalizations/
+*.zip
+HOWTO_COLAB.md
+
+# Python standard ignores
+venv/
+__pycache__/
+*.pyc
+*.pth
+*.pkl
