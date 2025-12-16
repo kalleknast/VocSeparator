@@ -169,3 +169,26 @@ python inference.py --mixture test_mixture.wav --model model_final.pth
 - Validation files are completely separate from training files
 - Training history is automatically saved for later analysis
 - Spectrograms help verify that mixtures are being created correctly
+
+## Roadmap & Future Improvements
+
+To further improve separation quality and model robustness, the following enhancements are planned:
+
+1.  **Advanced Data Augmentation**
+    - **Noise Injection**: Add background noise (white, pink, or environmental) to train the model to be robust against noisy recordings.
+    - **Reverberation**: Apply random room impulse responses to simulate different recording environments.
+    - **Pitch Shifting**: Randomly shift pitch to generalize across different individual marmosets.
+
+2.  **Model Architecture Enhancements**
+    - **Normalization**: Implement Weight Normalization or Group Normalization in residual blocks to stabilize training and allow higher learning rates.
+    - **Gated Activation Improvements**: Experiment with different gating mechanisms or attention layers.
+
+3.  **Training Optimizations**
+    - **Loss Function**: Incorporate STFT-based loss (Multi-resolution STFT) or Scale-Invariant Signal-to-Noise Ratio (SI-SNR) alongside L1 loss for better perceptual quality.
+    - **Learning Rate Scheduling**: Use `ReduceLROnPlateau` or Cosine Annealing to optimize convergence.
+    - **Mixed Precision**: Enable Automatic Mixed Precision (AMP) for faster training and lower memory usage.
+    - **Gradient Clipping**: Prevent exploding gradients during valid/stable training.
+
+4.  **Inference & Usability**
+    - **Overlap-Add Processing**: Implement sliding window inference with overlap-add to handle long audio files without boundary artifacts.
+    - **Enhanced Visualization**: Add specific code/tools for easy visual inspection of inputs (spectrograms/waveforms) and model outputs, allowing for quick qualitative assessment of separation performance.

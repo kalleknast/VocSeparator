@@ -1,4 +1,5 @@
 import os
+import argparse
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -6,9 +7,9 @@ from torch.utils.data import DataLoader
 from dataset import MarmosetDataset
 from model import WaveNetSourceSeparator
 
-def train():
+def train(data_dir):
     # Hyperparameters
-    data_dir = "/home/hjalmar/Python/VocDemuxer/data"
+    # data_dir argument passed from command line
     batch_size = 8
     num_epochs = 100
     learning_rate = 1e-4
@@ -101,4 +102,11 @@ def train():
     return history
 
 if __name__ == "__main__":
-    train()
+    parser = argparse.ArgumentParser(description='Train the WaveNet source separator.')
+    parser.add_argument('data_dir', type=str, help='Path to the directory containing the dataset')
+    args = parser.parse_args()
+    
+    if not os.path.exists(args.data_dir):
+        raise FileNotFoundError(f"Data directory not found: {args.data_dir}")
+        
+    train(args.data_dir)
