@@ -98,24 +98,28 @@ class MarmosetDataset(Dataset):
         # Calculate energy in windows
         frame_length = 1024
         hop_length = 512
-        energy = torch.norm(waveform.unfold(1, frame_length, hop_length), dim=2)
+        if waveform.shape[1] < frame_length:
+            # File is too short for energy windowing; treat whole file as active
+            pass
+        else:
+            energy = torch.norm(waveform.unfold(1, frame_length, hop_length), dim=2)
         
-        # Simple thresholding (e.g., 10% of max energy)
-        threshold = 0.1 * torch.max(energy)
-        active_frames = torch.where(energy > threshold)[1]
-        
-        if len(active_frames) > 0:
-            start_frame = max(0, active_frames[0] - 1)
-            end_frame = min(energy.shape[1] - 1, active_frames[-1] + 1)
+            # Simple thresholding (e.g., 10% of max energy)
+            threshold = 0.1 * torch.max(energy)
+            active_frames = torch.where(energy > threshold)[1]
             
-            start_sample = start_frame * hop_length
-            end_sample = (end_frame + 1) * hop_length + frame_length
-            
-            # Clamp to valid range
-            start_sample = max(0, start_sample)
-            end_sample = min(waveform.shape[1], end_sample)
-            
-            waveform = waveform[:, start_sample:end_sample]
+            if len(active_frames) > 0:
+                start_frame = max(0, active_frames[0] - 1)
+                end_frame = min(energy.shape[1] - 1, active_frames[-1] + 1)
+                
+                start_sample = start_frame * hop_length
+                end_sample = (end_frame + 1) * hop_length + frame_length
+                
+                # Clamp to valid range
+                start_sample = max(0, start_sample)
+                end_sample = min(waveform.shape[1], end_sample)
+                
+                waveform = waveform[:, start_sample:end_sample]
         
         return waveform
 
