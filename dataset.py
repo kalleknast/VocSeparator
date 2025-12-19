@@ -5,11 +5,12 @@ import numpy as np
 import torch
 import torchaudio
 import soundfile as sf
+import scipy.signal
 from torch.utils.data import Dataset
 
 class MarmosetDataset(Dataset):
     def __init__(self, data_dir, sample_rate=44100, segment_length=16384, transform=None, 
-                 split='train', val_split=0.2, random_seed=42):
+                 split='train', val_split=0.2, random_seed=42, highpass_cutoff=1000):
         """
         Args:
             data_dir (str): Directory containing clean .wav files.
@@ -25,13 +26,14 @@ class MarmosetDataset(Dataset):
         self.segment_length = segment_length
         self.transform = transform
         self.split = split
+        self.highpass_cutoff = highpass_cutoff
         
         # Find all wav and flac files
         wav_files = glob.glob(os.path.join(data_dir, "**", "*.wav"), recursive=True)
         flac_files = glob.glob(os.path.join(data_dir, "**", "*.flac"), recursive=True)
         all_files = wav_files + flac_files
         if not all_files:
-            print(f"Warning: No .wav files found in {data_dir}")
+            print(f"Warning: No .wav or .flac files found in {data_dir}")
             
         # Sort for reproducibility
         all_files = sorted(all_files)
@@ -59,10 +61,24 @@ class MarmosetDataset(Dataset):
         # but let's say it's equal to the number of files for now.
         return len(self.file_list)
 
-    def load_and_crop(self, filepath):
+    def load_and_crop(self, filepath, highpass_cutoff=1000):
         # waveform, sr = torchaudio.load(filepath)
         # Use soundfile directly to avoid torchaudio backend issues
         audio, sr = sf.read(filepath)
+        
+        # Apply Zero-Phase Highpass Filter
+        if highpass_cutoff is not None and highpass_cutoff > 0:
+            # Design filter (4th order Butterworth)
+            b, a = scipy.signal.butter(4, highpass_cutoff, btype='highpass', fs=sr)
+            # Apply forward-backward filter to ensure zero phase shift
+            # Use axis=0 for time dimension (sf.read returns (time, channels) or (time,))
+            padlen = min(len(audio)-1, 3 * max(len(a), len(b)))
+            # If signal is too short for default padlen, reduce it or skip
+            try:
+                audio = scipy.signal.filtfilt(b, a, audio, axis=0, padlen=padlen).copy()
+            except Exception as e:
+                print(f"Warning: Could not filter {filepath}: {e}")
+
         waveform = torch.from_numpy(audio).float()
         if waveform.ndim == 1:
             waveform = waveform.unsqueeze(0)
@@ -89,8 +105,8 @@ class MarmosetDataset(Dataset):
         active_frames = torch.where(energy > threshold)[1]
         
         if len(active_frames) > 0:
-            start_frame = active_frames[0]
-            end_frame = active_frames[-1]
+            start_frame = max(0, active_frames[0] - 1)
+            end_frame = min(energy.shape[1] - 1, active_frames[-1] + 1)
             
             start_sample = start_frame * hop_length
             end_sample = (end_frame + 1) * hop_length + frame_length
@@ -110,8 +126,8 @@ class MarmosetDataset(Dataset):
         while file1 == file2 and len(self.file_list) > 1:
             file2 = random.choice(self.file_list)
             
-        voc1 = self.load_and_crop(file1)
-        voc2 = self.load_and_crop(file2)
+        voc1 = self.load_and_crop(file1, highpass_cutoff=self.highpass_cutoff)
+        voc2 = self.load_and_crop(file2, highpass_cutoff=self.highpass_cutoff)
         
         # Pad or crop to segment_length
         def adjust_length(wav, length):

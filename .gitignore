@@ -1,8 +1,20 @@
 # User specific ignores
 data/
 Vocalizations/
+InteractionData2013/
+test/
+images/
 *.zip
 HOWTO_COLAB.md
+Train_VocSeparator.ipynb
+Vocalization_snr_report.csv
+*snr_report.csv
+zip*
+Phee_*.flac
+Twitter_*.flac
+Tsik_*.flac
+Vocalization_*.flac
+
 
 # Python standard ignores
 venv/

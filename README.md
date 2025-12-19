@@ -175,6 +175,7 @@ python inference.py --mixture test_mixture.wav --model model_final.pth
 To further improve separation quality and model robustness, the following enhancements are planned:
 
 1.  **Advanced Data Augmentation**
+    - **High-pass Filtering**: Remove low-frequency noise (below 1kHz) to focus on vocalization features.
     - **Noise Injection**: Add background noise (white, pink, or environmental) to train the model to be robust against noisy recordings.
     - **Reverberation**: Apply random room impulse responses to simulate different recording environments.
     - **Pitch Shifting**: Randomly shift pitch to generalize across different individual marmosets.
