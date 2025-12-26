@@ -12,7 +12,42 @@ from model import WaveNetSourceSeparator
 from visualize import save_sample_spectrograms
 
 
-def train(data_dir, model_dir=None, batch_size=32, num_epochs=100, learning_rate=1e-4):
+class MultiResolutionSTFTLoss(nn.Module):
+    def __init__(self, fft_sizes=[1024, 2048, 512], hop_sizes=[120, 240, 50], win_lengths=[600, 1200, 240]):
+        super().__init__()
+        assert len(fft_sizes) == len(hop_sizes) == len(win_lengths)
+        self.fft_sizes = fft_sizes
+        self.hop_sizes = hop_sizes
+        self.win_lengths = win_lengths
+
+    def forward(self, x, y):
+        # x: estimate, y: target. shape: [B, C, T]
+        # We assume mono audio C=1
+        x = x.squeeze(1)
+        y = y.squeeze(1)
+        
+        loss = 0.0
+        for fft_size, hop_size, win_length in zip(self.fft_sizes, self.hop_sizes, self.win_lengths):
+            window = torch.hann_window(win_length).to(x.device)
+            
+            x_stft = torch.stft(x, n_fft=fft_size, hop_length=hop_size, win_length=win_length, window=window, return_complex=True)
+            y_stft = torch.stft(y, n_fft=fft_size, hop_length=hop_size, win_length=win_length, window=window, return_complex=True)
+            
+            x_mag = torch.abs(x_stft) + 1e-7
+            y_mag = torch.abs(y_stft) + 1e-7
+            
+            # Spectral Convergence Loss
+            sc_loss = torch.norm(y_mag - x_mag, p="fro") / torch.norm(y_mag, p="fro")
+            
+            # Log Magnitude Loss
+            log_loss = torch.mean(torch.abs(torch.log(y_mag) - torch.log(x_mag)))
+            
+            loss += sc_loss + log_loss
+            
+        return loss / len(self.fft_sizes)
+
+
+def train(data_dir, model_dir=None, batch_size=32, num_epochs=100, learning_rate=1e-4, use_stft_loss=False):
     # Hyperparameters
     # data_dir argument passed from command line
 
@@ -39,7 +74,9 @@ def train(data_dir, model_dir=None, batch_size=32, num_epochs=100, learning_rate
     model = WaveNetSourceSeparator(in_channels=1, out_channels=1).to(device)
     
     # Loss and Optimizer
-    criterion = nn.L1Loss()
+    criterion_l1 = nn.L1Loss()
+    criterion_stft = MultiResolutionSTFTLoss().to(device) if use_stft_loss else None
+    
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=5)
 
@@ -64,7 +101,10 @@ def train(data_dir, model_dir=None, batch_size=32, num_epochs=100, learning_rate
             
             # Forward pass
             output = model(mixture)
-            loss = criterion(output, target)
+            loss = criterion_l1(output, target)
+            
+            if criterion_stft:
+                loss += criterion_stft(output, target)
             
             # Backward pass
             optimizer.zero_grad()
@@ -90,7 +130,9 @@ def train(data_dir, model_dir=None, batch_size=32, num_epochs=100, learning_rate
                 target = target.to(device)
                 
                 output = model(mixture)
-                loss = criterion(output, target)
+                loss = criterion_l1(output, target)
+                if criterion_stft:
+                    loss += criterion_stft(output, target)
                 val_loss += loss.item()
         
         avg_val_loss = val_loss / len(val_loader)
@@ -134,6 +176,6 @@ if __name__ == "__main__":
     if not os.path.exists(args.data_dir):
         raise FileNotFoundError(f"Data directory not found: {args.data_dir}")
         
-    history = train(args.data_dir)
+    history = train(args.data_dir, use_stft_loss=False)
     with open(args.history_fname, 'wb') as f:
         pickle.dump(history, f)
