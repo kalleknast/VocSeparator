@@ -13,15 +13,20 @@ A WaveNet-based deep learning system for separating overlapping marmoset vocaliz
 
 ## Dataset
 
-Current dataset: **38,065 clean vocalization files** (30,452 train, 7,613 validation)
+Current dataset: **50,000 clean vocalization files** (40,000 train, 10,000 validation)
+
+- Files are split such that validation files are not used in training
+
+<!--
 - **Source**: [MarmAudio: A large annotated dataset of vocalizations by common marmosets](https://zenodo.org/records/15017207)
 - Split: 80% train, 20% validation
-- Files are split such that validation files are not used in training
+-->
 
 ### Data Augmentation
 
-From 38,065 files, the augmentation creates:
-- **~1.45 billion unique pairs per epoch** (30,452 × 30,451)
+From 50,000 files, the augmentation creates:
+
+- **~1.6 billion unique pairs per epoch** (40,000 × 39,999)
 - **Effectively infinite variations** due to:
   - Random amplitude scaling (0.7-1.0)
   - Random time shifting (up to 25% of segment length)
@@ -96,15 +101,13 @@ python create_mixture.py
 ## File Structure
 
 ```
-silver-voyager/
+VocSeparator/
 ├── dataset.py           # Data loading, augmentation, train/val split
 ├── model.py             # WaveNet architecture
 ├── train.py             # Training loop with validation
 ├── inference.py         # Separation and iterative demuxing
-├── visualize.py         # Spectrogram visualization
-├── plot_history.py      # Plot training curves
+├── visualize.py         # Spectrogram visualization, plotting training curves, etc.
 ├── create_mixture.py    # Helper to create test mixtures
-├── venv/                # Virtual environment
 ├── checkpoints/         # Model checkpoints
 ├── model_final.pth      # Final trained model
 └── training_history.pkl # Training/validation loss history
@@ -122,21 +125,24 @@ silver-voyager/
 
 - **Loss**: L1 Loss (MAE)
 - **Optimizer**: Adam (lr=1e-4)
-- **Batch size**: 8
+- **Batch size**: 32
 - **Segment length**: 16,384 samples (~0.37s at 44.1kHz)
 - **Epochs**: 100
 - **Device**: CPU (GPU recommended for production)
 
+<!--
 ## Data Recommendations
 
 - **Current**: 90 files (minimal for testing)
 - **Minimum**: 500-1,000 files for basic separation
 - **Good**: 2,000-5,000 files for robust performance
 - **Excellent**: 10,000+ files for state-of-the-art results
+-->
 
 ## Iterative Separation
 
 For N overlapping vocalizations:
+
 1. **Iteration 1**: `[voc1 + voc2 + voc3]` → model → `voc1`, remainder: `[voc2 + voc3]`
 2. **Iteration 2**: `[voc2 + voc3]` → model → `voc2`, remainder: `voc3`
 3. Continue until all sources separated
@@ -174,22 +180,25 @@ python inference.py --mixture test_mixture.wav --model model_final.pth
 
 To further improve separation quality and model robustness, the following enhancements are planned:
 
-1.  **Advanced Data Augmentation**
-    - **High-pass Filtering**: Remove low-frequency noise (below 1kHz) to focus on vocalization features.
+1. **Advanced Data Augmentation**
+    - ~~**High-pass Filtering**: Remove low-frequency noise (below 1kHz) to focus on vocalization features.~~
     - **Noise Injection**: Add background noise (white, pink, or environmental) to train the model to be robust against noisy recordings.
     - **Reverberation**: Apply random room impulse responses to simulate different recording environments.
     - **Pitch Shifting**: Randomly shift pitch to generalize across different individual marmosets.
 
-2.  **Model Architecture Enhancements**
-    - **Normalization**: Implement Weight Normalization or Group Normalization in residual blocks to stabilize training and allow higher learning rates.
+2. **Model Architecture Enhancements**
+    - ~~**Normalization**: Implement Weight Normalization or Group Normalization in residual blocks to stabilize training and allow higher learning rates.~~
     - **Gated Activation Improvements**: Experiment with different gating mechanisms or attention layers.
 
-3.  **Training Optimizations**
-    - **Loss Function**: Incorporate STFT-based loss (Multi-resolution STFT) or Scale-Invariant Signal-to-Noise Ratio (SI-SNR) alongside L1 loss for better perceptual quality.
-    - **Learning Rate Scheduling**: Use `ReduceLROnPlateau` or Cosine Annealing to optimize convergence.
+3. **Training Optimizations**
+    - **Loss Function**: incorporate an auxiliary loss alongside the L1 loss to improve the quality of the separated signals.
+    Alternatives:
+        - ~~STFT-based loss (Multi-resolution STFT)~~
+        - Scale-Invariant Signal-to-Noise Ratio (SI-SNR)
+    - ~~**Learning Rate Scheduling**: Use `ReduceLROnPlateau` or Cosine Annealing to optimize convergence.~~
     - **Mixed Precision**: Enable Automatic Mixed Precision (AMP) for faster training and lower memory usage.
-    - **Gradient Clipping**: Prevent exploding gradients during valid/stable training.
+    - ~~**Gradient Clipping**: Prevent exploding gradients during valid/stable training.~~
 
-4.  **Inference & Usability**
+4. **Inference & Usability**
     - **Overlap-Add Processing**: Implement sliding window inference with overlap-add to handle long audio files without boundary artifacts.
     - **Enhanced Visualization**: Add specific code/tools for easy visual inspection of inputs (spectrograms/waveforms) and model outputs, allowing for quick qualitative assessment of separation performance.
