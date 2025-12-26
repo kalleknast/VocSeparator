@@ -78,11 +78,97 @@ class WaveNetSourceSeparator(nn.Module):
         
         return output
 
+class EnhancedResidualBlock(nn.Module):
+    def __init__(self, residual_channels, skip_channels, dilation):
+        super(EnhancedResidualBlock, self).__init__()
+        
+        # Weight Normalization added to convolutions
+        self.dilated_conv = nn.utils.weight_norm(nn.Conv1d(
+            residual_channels, 
+            2 * residual_channels, 
+            kernel_size=3, 
+            padding=dilation, 
+            dilation=dilation
+        ))
+        self.res_conv = nn.utils.weight_norm(nn.Conv1d(residual_channels, residual_channels, kernel_size=1))
+        self.skip_conv = nn.utils.weight_norm(nn.Conv1d(residual_channels, skip_channels, kernel_size=1))
+
+    def forward(self, x):
+        output = self.dilated_conv(x)
+        
+        # Gated activation unit
+        filter_out, gate_out = output.chunk(2, dim=1)
+        output = torch.tanh(filter_out) * torch.sigmoid(gate_out)
+        
+        # Residual connection
+        res_output = self.res_conv(output)
+        
+        # Residual + Input with scaling
+        output = (x + res_output) * 0.7071 # Scale to keep variance stable
+        
+        # Skip connection
+        skip_output = self.skip_conv(output)
+        
+        return output, skip_output
+
+class EnhancedWaveNetSourceSeparator(nn.Module):
+    def __init__(self, 
+                 in_channels=1, 
+                 out_channels=1, 
+                 residual_channels=64, 
+                 skip_channels=64, 
+                 num_blocks=3, 
+                 num_layers_per_block=10):
+        super(EnhancedWaveNetSourceSeparator, self).__init__()
+        
+        # Weight Normalization on input convolution
+        self.input_conv = nn.utils.weight_norm(nn.Conv1d(in_channels, residual_channels, kernel_size=1))
+        
+        self.residual_blocks = nn.ModuleList()
+        for b in range(num_blocks):
+            for i in range(num_layers_per_block):
+                dilation = 2 ** i
+                self.residual_blocks.append(
+                    EnhancedResidualBlock(residual_channels, skip_channels, dilation)
+                )
+        
+        # Weight Normalization on output convolutions
+        self.end_conv1 = nn.utils.weight_norm(nn.Conv1d(skip_channels, skip_channels, kernel_size=1))
+        self.end_conv2 = nn.utils.weight_norm(nn.Conv1d(skip_channels, out_channels, kernel_size=1))
+
+    def forward(self, x):
+        # x: [Batch, Channels, Time]
+        x = self.input_conv(x)
+        
+        skip_connections = []
+        for block in self.residual_blocks:
+            x, skip = block(x)
+            skip_connections.append(skip)
+            
+        # Sum skip connections
+        output = sum(skip_connections)
+        
+        # Output processing
+        output = F.relu(output)
+        output = self.end_conv1(output)
+        output = F.relu(output)
+        output = self.end_conv2(output)
+        
+        return output
+
 if __name__ == "__main__":
     # Test model
+    print("Testing WaveNetSourceSeparator...")
     model = WaveNetSourceSeparator()
     x = torch.randn(1, 1, 16000)
     y = model(x)
     print(f"Input shape: {x.shape}")
     print(f"Output shape: {y.shape}")
     print(f"Model parameters: {sum(p.numel() for p in model.parameters())}")
+    
+    print("\nTesting EnhancedWaveNetSourceSeparator...")
+    model_enhanced = EnhancedWaveNetSourceSeparator()
+    y_enhanced = model_enhanced(x)
+    print(f"Input shape: {x.shape}")
+    print(f"Output shape: {y_enhanced.shape}")
+    print(f"Model parameters: {sum(p.numel() for p in model_enhanced.parameters())}")
