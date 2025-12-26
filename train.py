@@ -12,12 +12,17 @@ from model import WaveNetSourceSeparator
 from visualize import save_sample_spectrograms
 
 
-def train(data_dir, batch_size=32, num_epochs=100, learning_rate=1e-4):
+def train(data_dir, model_dir=None, batch_size=32, num_epochs=100, learning_rate=1e-4):
     # Hyperparameters
     # data_dir argument passed from command line
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    checkpoint_dir = "checkpoints"
+    
+    if model_dir:
+        checkpoint_dir = model_dir
+    else:
+        checkpoint_dir = "checkpoints"
+        
     os.makedirs(checkpoint_dir, exist_ok=True)
 
     # Datasets
@@ -36,7 +41,7 @@ def train(data_dir, batch_size=32, num_epochs=100, learning_rate=1e-4):
     # Loss and Optimizer
     criterion = nn.L1Loss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=5, verbose=True)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=5)
 
     print(f"Starting training on {device}...")
     print(f"Train samples: {len(train_dataset)}, Val samples: {len(val_dataset)}")
@@ -96,7 +101,7 @@ def train(data_dir, batch_size=32, num_epochs=100, learning_rate=1e-4):
         # Save best model
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            torch.save(model.state_dict(), os.path.join(data_dir, "model_best.pth"))
+            torch.save(model.state_dict(), os.path.join(checkpoint_dir, "model_best.pth"))
             print(f"  -> Saved new best model: {best_val_loss:.6f}")        
         
         # Store history
@@ -110,12 +115,13 @@ def train(data_dir, batch_size=32, num_epochs=100, learning_rate=1e-4):
             torch.save(model.state_dict(), os.path.join(checkpoint_dir, f"model_epoch_{epoch+1}.pth"))
 
     print("Training complete.")
-    torch.save(model.state_dict(), "model_final.pth")
+    torch.save(model.state_dict(), os.path.join(checkpoint_dir, "model_final.pth"))
     
     # Save training history
-    with open('training_history.pkl', 'wb') as f:
+    history_path = os.path.join(checkpoint_dir, 'training_history.pkl')
+    with open(history_path, 'wb') as f:
         pickle.dump(history, f)
-    print("Training history saved to training_history.pkl")
+    print(f"Training history saved to {history_path}")
     
     return history
 
