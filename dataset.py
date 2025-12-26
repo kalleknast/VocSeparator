@@ -18,7 +18,7 @@ class MarmosetDataset(Dataset):
             segment_length (int): Length of audio segments to return (in samples).
             transform (callable, optional): Optional transform to be applied on a sample.
             split (str): 'train' or 'val' to specify which split to use.
-            val_split (float): Fraction of data to use for validation (default 0.2).
+            val_split (float): Fraction of data to use for validation (default 0.2). Max size is 10000 files.
             random_seed (int): Random seed for reproducible splits.
         """
         self.data_dir = data_dir
@@ -44,6 +44,8 @@ class MarmosetDataset(Dataset):
         random.shuffle(indices)
         
         val_size = int(len(all_files) * val_split)
+        if val_size > 10000:
+            val_size = 10000
         val_indices = set(indices[:val_size])
         train_indices = set(indices[val_size:])
         
@@ -100,7 +102,7 @@ class MarmosetDataset(Dataset):
         hop_length = 512
         if waveform.shape[1] < frame_length:
             # File is too short for energy windowing; treat whole file as active
-            pass
+            return waveform
         else:
             energy = torch.norm(waveform.unfold(1, frame_length, hop_length), dim=2)
         
@@ -154,12 +156,27 @@ class MarmosetDataset(Dataset):
         voc2_scaled = voc2 * scale2
         
         # Data augmentation: Time shifting (onset offset)
-        # Create a buffer with zeros to allow time shifts
-        max_shift = self.segment_length // 4  # Allow up to 25% shift
+        # ENFORCE that target (voc1) starts BEFORE interferer (voc2)
+        min_delay_samples = int(self.sample_rate * 0.05) # 50 ms
+        max_shift = self.segment_length // 4
         
-        # Random time shifts for each vocalization
-        shift1 = random.randint(0, max_shift)
-        shift2 = random.randint(0, max_shift)
+        # Target starts early (0 to small random)
+        shift1 = random.randint(0, max_shift // 2)
+        
+        # Interferer starts later (target_start + 50ms + random)
+        # Ensure we don't shift out of bounds
+        min_shift2 = shift1 + min_delay_samples
+        if min_shift2 >= self.segment_length:
+             # Fallback if segment is too short for delay constraint
+             min_shift2 = shift1 + 1 
+             
+        available_space = self.segment_length - 1 - min_shift2
+        if available_space > 0:
+            extra_shift = random.randint(0, min(available_space, max_shift))
+        else:
+            extra_shift = 0
+            
+        shift2 = min_shift2 + extra_shift        
         
         # Create shifted versions by padding and cropping
         voc1_shifted = torch.nn.functional.pad(voc1_scaled, (shift1, 0))[:, :self.segment_length]
@@ -173,11 +190,15 @@ class MarmosetDataset(Dataset):
         
         # Normalize mixture to avoid clipping and scale inputs
         max_val = torch.max(torch.abs(mixture))
-        if max_val > 0:
+        if max_val > 1e-6:
             mixture = mixture / max_val
-            voc1 = voc1 / max_val
-            voc2 = voc2 / max_val # Keep consistent scaling
-            
-        return mixture, voc1
+            target = target / max_val
+            # voc1 = voc1 / max_val
+            # voc2 = voc2 / max_val # Keep consistent scaling
+        else:
+            mixture = torch.zeros_like(mixture)
+            target = torch.zeros_like(target)
+
+        return mixture, target
 
 

@@ -1,10 +1,59 @@
 import os
 import glob
 import matplotlib.pyplot as plt
+import pickle
 import numpy as np
 import torch
 import soundfile as sf
 from dataset import MarmosetDataset
+
+def save_sample_spectrograms(dataset, save_dir, num_samples=5):
+    """Save spectrograms and waveforms of random samples from the dataset."""
+    os.makedirs(save_dir, exist_ok=True)
+    indices = torch.randperm(len(dataset))[:num_samples]
+    
+    print(f"Saving {num_samples} sample spectrograms/waveforms to {save_dir}...")
+    
+    for i, idx in enumerate(indices):
+        mixture, target = dataset[idx]
+        # mixture and target are tensors, likely (1, T)
+        
+        # Calculate residual (the other call)
+        residual = mixture - target
+        
+        # Plot: 6 rows (Spectrogram, Waveform for each of Mixture, Target, Residual)
+        fig, axes = plt.subplots(6, 1, figsize=(10, 18))
+        
+        def plot_group(spec_ax, wave_ax, data, title):
+            if isinstance(data, torch.Tensor):
+                data = data.numpy()
+            data = data.flatten()
+            
+            # Create time axis
+            times = np.arange(len(data)) / dataset.sample_rate
+            
+            # Spectrogram
+            spec_ax.specgram(data, Fs=dataset.sample_rate, NFFT=512, noverlap=256, cmap='viridis')
+            spec_ax.set_title(f"{title} (Spectrogram)")
+            spec_ax.set_ylabel("Frequency (Hz)")
+            spec_ax.set_xticks([]) # Remove x-ticks for spectrogram to reduce clutter
+            
+            # Waveform
+            wave_ax.plot(times, data, linewidth=0.5, alpha=0.8)
+            wave_ax.set_title(f"{title} (Waveform)")
+            wave_ax.set_ylabel("Amplitude")
+            wave_ax.set_xlim(0, times[-1])
+            wave_ax.grid(True, alpha=0.3)
+        
+        plot_group(axes[0], axes[1], mixture, "Mixture")
+        plot_group(axes[2], axes[3], target, "Target (Call 1)")
+        plot_group(axes[4], axes[5], residual, "Residual (Call 2)")
+        
+        axes[5].set_xlabel("Time (s)")
+        plt.tight_layout()
+        plt.savefig(os.path.join(save_dir, f"sample_{i+1}.png"))
+        plt.close(fig)
+        
 
 def plot_spectrogram(waveform, sample_rate, title="Spectrogram"):
     """Plot spectrogram of a waveform."""
@@ -247,3 +296,45 @@ if __name__ == "__main__":
     elif args.mode == 'dir':
         # Use data_dir as input directory
         visualize_directory(args.data_dir, args.save)
+        
+
+def plot_training_history(history_path="training_history.pkl"):
+    """
+    Plots the training and validation loss curves from a pickle file.
+    """
+    if not os.path.exists(history_path):
+        print(f"Error: History file '{history_path}' not found.")
+        return
+
+    with open(history_path, 'rb') as f:
+        history = pickle.load(f)
+
+    train_loss = history.get('train_loss', [])
+    val_loss = history.get('val_loss', [])
+
+    if not train_loss:
+        print("Error: No training loss data found in history.")
+        return
+
+    epochs = range(1, len(train_loss) + 1)
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(epochs, train_loss, 'b-', label='Training Loss', linewidth=2)
+    if val_loss:
+        plt.plot(epochs, val_loss, 'r-', label='Validation Loss', linewidth=2)
+    
+    plt.title('Training and Validation Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss (L1)')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    out_file = "training_curves.png"
+    plt.savefig(out_file)
+    print(f"Saved training curves to {out_file}")
+    
+    # Print final stats
+    print("\nTraining Summary:")
+    print(f"Final Training Loss: {train_loss[-1]:.4f}")
+    if val_loss:
+        print(f"Final Validation Loss: {val_loss[-1]:.4f}")
